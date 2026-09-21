@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sunflowers - dibujo generado</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; min-height: 100%;
+    background: #000;
+    display: flex; align-items: center; justify-content: center;
+    font-family: system-ui, sans-serif;
+  }
+  #status {
+    position: fixed; top: 12px; left: 12px;
+    color: #aaa; font-size: 13px;
+  }
+  canvas {
+    max-width: 95vw; max-height: 95vh;
+    background: #000;
+    image-rendering: pixelated;
+  }
+</style>
+</head>
+<body>
+<div id="status">Cargando...</div>
+<canvas id="c"></canvas>
+<script>
+const DURATION_MS = 30000; // tiempo total de la animación
+
+async function main() {
+  const status = document.getElementById('status');
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+
+  let regions;
+  try {
+    const res = await fetch('sunflowers.json');
+    regions = await res.json();
+  } catch (e) {
+    status.textContent = 'No se pudo cargar sunflowers.json (¿está junto a este HTML?)';
+    return;
+  }
+
+  // Los puntos son coordenadas de píxel reales, no un contorno ordenado.
+  let maxX = 0, maxY = 0;
+  for (const r of regions) {
+    for (const [x, y] of r.contour) {
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+  }
+  const width = maxX + 1;
+  const height = maxY + 1;
+  canvas.width = width;
+  canvas.height = height;
+
+  // Aplanar todos los píxeles (x, y, r, g, b) en un solo arreglo
+  // para poder ir revelándolos progresivamente.
+  const flat = [];
+  for (const region of regions) {
+    const [r, g, b] = region.color;
+    const R = Math.max(0, Math.min(255, Math.round(r)));
+    const G = Math.max(0, Math.min(255, Math.round(g)));
+    const B = Math.max(0, Math.min(255, Math.round(b)));
+    for (const [x, y] of region.contour) {
+      flat.push(x, y, R, G, B);
+    }
+  }
+  const totalPoints = flat.length / 5;
+  status.textContent = `Generando... 0%`;
+
+  const imgData = ctx.createImageData(width, height);
+  const buf = imgData.data;
+
+  let drawn = 0;
+  let startTime = null;
+
+  function step(timestamp) {
+    if (startTime === null) startTime = timestamp;
+    const elapsed = timestamp - startTime;
+    const frac = Math.min(1, elapsed / DURATION_MS);
+    const target = Math.floor(frac * totalPoints);
+
+    for (let i = drawn; i < target; i++) {
+      const o = i * 5;
+      const x = flat[o], y = flat[o + 1];
+      const R = flat[o + 2], G = flat[o + 3], B = flat[o + 4];
+      const idx = (y * width + x) * 4;
+      buf[idx] = R;
+      buf[idx + 1] = G;
+      buf[idx + 2] = B;
+      buf[idx + 3] = 255;
+    }
+    drawn = target;
+
+    ctx.putImageData(imgData, 0, 0);
+    status.textContent = `Generando... ${Math.round(frac * 100)}%`;
+
+    if (frac < 1) {
+      requestAnimationFrame(step);
+    } else {
+      status.remove();
+    }
+  }
+
+  requestAnimationFrame(step);
+}
+main();
+</script>
+</body>
+</html>
